@@ -19,6 +19,7 @@ type Node struct {
     addr    *net.TCPAddr
     val     int 
     setVal  []int
+    list    []int
     byz     int
     root    *EIGNode
 }
@@ -61,18 +62,15 @@ func (node *Node) handleClient(conn net.Conn) {
         value, _  := strconv.Atoi(pathVal[1])
         depth := len(path)
         curr := node.root
-        for i := 1; i < depth; i++ {
+        for i := 0; i < depth; i++ {
             for _, child := range curr.child {
-                if child.path[i-1] == path[i-1] {
+                if child.path[i] == path[i] {
                     curr = child
                     break
                 }
             }
         }
-        newChild := &EIGNode{level:depth, val: value}
-        newChild.path = make([]int, depth)
-        copy(newChild.path, path)
-        curr.child = append(curr.child, newChild)
+        curr.val = value
     }
     fmt.Println("read")
     fmt.Println(msg)
@@ -117,14 +115,46 @@ func (node *Node) broadcast(msg string) {
     }
 }
 
+func (node *Node) createChildren(eigNode *EIGNode) {
+    list := node.list
+    for _, i := range list {
+        found := 0
+        for _, j := range eigNode.path {
+            if i == j {
+                found = 1
+                break
+            }
+        }
+        if found == 0 {
+            newChild := &EIGNode{level:eigNode.level+1}
+            newChild.path = make([]int, eigNode.level)
+            copy(newChild.path, eigNode.path)
+            newChild.path = append(newChild.path, i)
+            eigNode.child = append(eigNode.child, newChild)
+        }
+    }
+}
 
-func traverseEIG(eigNode *EIGNode, depth int) []*EIGNode {
-    if depth == 1 {
-        return []*EIGNode{eigNode}
+func (node *Node) traverseEIG(eigNode *EIGNode, depth int) []*EIGNode {
+    if depth == 0 {
+        node.createChildren(eigNode)
+        //fmt.Println(eigNode.child)
+        found := 0
+        for _, j := range eigNode.path {
+            if node.addr.Port == j {
+                found = 1
+                break
+            }
+        }
+        if found == 0 {
+            fmt.Println("To send: ", eigNode.val)
+            return []*EIGNode{eigNode}
+        }
+        return []*EIGNode{}
     }
     leaves := []*EIGNode{}
     for _, child := range eigNode.child {
-        subLeaf := traverseEIG(child, depth-1)
+        subLeaf := node.traverseEIG(child, depth-1)
         leaves = append(leaves, subLeaf...)
     }
     return leaves
@@ -132,9 +162,9 @@ func traverseEIG(eigNode *EIGNode, depth int) []*EIGNode {
 
 //Message format ---> int1.int2.int3.currRoot:val,int1.int2.int3.currRoot:val, ...,
 func (node *Node) initRound(roundNum int) {
-    sendTo := traverseEIG(node.root, roundNum)
+    sendThis := node.traverseEIG(node.root, roundNum-1)
     msg := ""
-    for _, each := range sendTo {
+    for _, each := range sendThis {
         for _, pathInt := range each.path {
             msg += strconv.Itoa(pathInt) + "."
         }
@@ -183,6 +213,10 @@ func Client(port string, nbrs []string, byz int) {
     msg := "My (" + strconv.Itoa(node.addr.Port) + ") initial value is " + strconv.Itoa(node.val)
     fmt.Println(msg)
     node.root = &EIGNode{level: 0, val: node.val}
+    for _, nbr := range node.nbr {
+       node.list = append(node.list, nbr.Port)
+    }
+    node.list = append(node.list, node.addr.Port)
 
     node.listen()
     time.Sleep(200*time.Millisecond) 

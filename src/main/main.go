@@ -51,7 +51,7 @@ func main() {
     faults, _ := strconv.Atoi(os.Args[2])
     //conVal := make([]string, graph.numNodes)
     for i := 0; i < graph.numNodes; i++{
-        port := all[i]
+        port := strconv.Itoa(9000+i)
         nbrs := make([]string, graph.numNodes-1)
         for j, x := 0, 0; j < graph.numNodes; j++ {
             if j != i {
