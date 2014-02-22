@@ -36,6 +36,7 @@ type EIGNode struct {
     path  []int
     val   int
     child []*EIGNode
+    newval int
 }
 
 func initVal() int{
@@ -72,8 +73,8 @@ func (node *Node) handleClient(conn net.Conn) {
         }
         curr.val = value
     }
-    fmt.Println("read")
-    fmt.Println(msg)
+    //fmt.Println("read")
+    //fmt.Println(msg)
     conn.Close() 
 }
 
@@ -130,6 +131,9 @@ func (node *Node) createChildren(eigNode *EIGNode) {
             newChild.path = make([]int, eigNode.level)
             copy(newChild.path, eigNode.path)
             newChild.path = append(newChild.path, i)
+            if i == node.addr.Port {
+                newChild.val = eigNode.val
+            }
             eigNode.child = append(eigNode.child, newChild)
         }
     }
@@ -147,7 +151,7 @@ func (node *Node) traverseEIG(eigNode *EIGNode, depth int) []*EIGNode {
             }
         }
         if found == 0 {
-            fmt.Println("To send: ", eigNode.val)
+            //fmt.Println("To send: ", eigNode.val)
             return []*EIGNode{eigNode}
         }
         return []*EIGNode{}
@@ -169,6 +173,9 @@ func (node *Node) initRound(roundNum int) {
             msg += strconv.Itoa(pathInt) + "."
         }
         val := strconv.Itoa(each.val)
+        if node.byz == 1{
+            val = strconv.Itoa(rand.Intn(2))
+        }
         msg += node.name + ":" + val + ","
     }
     msg = strings.TrimRight(msg, ",")
@@ -177,24 +184,71 @@ func (node *Node) initRound(roundNum int) {
 }
 
 
-func (node *Node) getConsensus() {
-    count := make(map[int]int)
-    for _, val := range node.setVal {
-        count[val] += 1
-        //fmt.Printf("I am %s. Setval: %d\n", node.name, val)
+//func (node *Node) getConsensus() {
+//    count := make(map[int]int)
+//    for _, val := range node.setVal {
+//        count[val] += 1
+//        //fmt.Printf("I am %s. Setval: %d\n", node.name, val)
+//    }
+//    maxVal := 0
+//    var maxKey int
+//    for key, _ := range count {
+//        if count[key] > maxVal {
+//            maxKey = key
+//            maxVal = count[key]
+//        }
+//    }
+//    fmt.Println("The consensus is value ", maxKey)
+//}
+
+func (node *Node) getConsensus(level int) {
+    curr := node.root
+    stack := []*EIGNode{}
+    queue := []*EIGNode{curr}
+    for len(queue) > 0{
+        x := queue[0] 
+        queue = queue[1:]
+        if x.level <= level {
+            for _, child := range x.child {
+                queue = append(queue, child)
+            }
+        }
+        stack = append(stack, x)
     }
-    maxVal := 0
-    var maxKey int
-    for key, _ := range count {
-        if count[key] > maxVal {
-            maxKey = key
-            maxVal = count[key]
+    for len(stack) > 0 {
+        x := stack[len(stack)-1]
+        stack = stack[:len(stack)-1]
+        switch {
+            case x.level == level+1: x.newval = x.val
+            default: 
+                count := make(map[int]int)
+                for _, child := range x.child {
+                    count[child.val] += 1
+                }
+                maxVal := 0
+                var maxKey int
+                for key, _ := range count {
+                    if count[key] > maxVal {
+                        maxKey = key
+                        maxVal = count[key]
+                    }
+                }
+                x.newval = maxKey
         }
     }
-    fmt.Println("The consensus is value ", maxKey)
 }
 
-func Client(port string, nbrs []string, byz int) {
+func (node *Node) initConsensus(faults int){
+    for i := 1; i <= faults + 1; i++ {
+        node.initRound(i)
+        time.Sleep(300*time.Millisecond) 
+    }
+    node.getConsensus(faults)
+    fmt.Printf("My %s final value is %d \n", node.name, node.root.newval)
+
+}
+
+func Client(port string, nbrs []string, byz int, faults int) {
     node := Node{name: port, status: "Init", byz: byz}
     var err error
     port = ":" + port
@@ -219,11 +273,8 @@ func Client(port string, nbrs []string, byz int) {
     node.list = append(node.list, node.addr.Port)
 
     node.listen()
-    time.Sleep(200*time.Millisecond) 
-    node.initRound(1)
-    time.Sleep(600*time.Millisecond) 
-    node.initRound(2)
-    time.Sleep(200*time.Millisecond) 
+    time.Sleep(400*time.Millisecond) 
+    node.initConsensus(faults)
     //fmt.Printf("Hi, my port is %s. The set of values I have received are: \n", node.name)
     //node.getConsensus()
 }

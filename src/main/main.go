@@ -63,9 +63,9 @@ func main() {
             case i < faults: byz = 1
             default: byz = 0
         }
-        go peer.Client(port, nbrs, byz)
+        go peer.Client(port, nbrs, byz, faults)
     }
-    time.Sleep(2000*time.Millisecond) 
+    time.Sleep(3000*time.Millisecond) 
     fmt.Printf("Done!")
     os.Exit(0)
 }
